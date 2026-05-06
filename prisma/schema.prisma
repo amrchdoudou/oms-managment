@@ -1,0 +1,79 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Store {
+  id    Int    @id @default(autoincrement())
+  name  String
+  slug  String @unique
+  users User[]
+}
+
+model User {
+  id       Int    @id @default(autoincrement())
+  email    String @unique
+  password String
+  store_id Int?
+  store    Store? @relation(fields: [store_id], references: [id])
+}
+
+model Product {
+  id                  Int      @id @default(autoincrement())
+  name                String
+  description         String?
+  price               Float
+  images              Json?
+  variants            Json?
+  inventory           Json?
+  store_id            Int?
+  landing_page_config Json?
+  created_at          DateTime @default(now())
+  orders              Order[]
+}
+
+model Order {
+  id               Int      @id @default(autoincrement())
+  name             String
+  phone            String
+  wilaya           String
+  commune          String
+  address          String
+  product_id       Int?
+  product          Product? @relation(fields: [product_id], references: [id])
+  variant_selected Json?
+  total_price      Float
+  delivery_fee     Float
+  status           String   @default("pending")
+  source           String?
+  store_id         Int?
+  stop_desk        Int      @default(0)
+  tracking_number  String?
+  created_at       DateTime @default(now())
+}
+
+model Pixel {
+  id         Int      @id @default(autoincrement())
+  platform   String
+  pixel_id   String
+  store_id   Int?
+  created_at DateTime @default(now())
+}
+
+model Setting {
+  key      String @id
+  value    Json
+  store_id Int?
+}
+
+model Template {
+  id         Int      @id @default(autoincrement())
+  name       String
+  type       String
+  config     Json
+  created_at DateTime @default(now())
+}

@@ -6,7 +6,7 @@ export const ProductDesignerAdmin = () => {
   const [products, setProducts] = useState<any[]>([]);
 
   useEffect(() => {
-    fetch('/api/products').then(r => r.json()).then(setProducts);
+    fetch('/api/products').then(r => r.json()).then(data => setProducts(Array.isArray(data) ? data : []));
   }, []);
 
   return (

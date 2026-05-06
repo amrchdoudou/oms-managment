@@ -92,7 +92,7 @@ export const SettingsAdmin = () => {
             <div className="bg-white border border-[#E2E8F0] shadow-sm rounded-xl p-6">
               <h3 className="font-bold text-lg text-[#1A202C] mb-6">Active Pixels</h3>
               <div className="space-y-4">
-                {pixels.map(p => (
+                {(pixels || []).map(p => (
                   <div key={p.id} className="flex justify-between items-center p-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl">
                     <div>
                       <div className="flex items-center gap-2 mb-1">

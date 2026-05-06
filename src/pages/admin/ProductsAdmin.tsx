@@ -19,7 +19,9 @@ export const ProductsAdmin = () => {
   const [inventory, setInventory] = useState<Record<string, number>>({});
 
   const loadProducts = () => {
-    fetch('/api/products').then(r => r.json()).then(setProducts);
+    fetch('/api/products')
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setProducts(Array.isArray(data) ? data : []));
   };
 
   useEffect(() => { loadProducts(); }, []);
@@ -29,9 +31,9 @@ export const ProductsAdmin = () => {
     setName(p.name);
     setDesc(p.description);
     setPrice(p.price.toString());
-    setVariants(p.variants.map((v: any) => ({
+    setVariants((p.variants || []).map((v: any) => ({
       name: v.name,
-      options: v.options.join(', ')
+      options: (v.options || []).join(', ')
     })));
     setInventory(p.inventory || {});
     window.scrollTo({ top: 0, behavior: 'smooth' });

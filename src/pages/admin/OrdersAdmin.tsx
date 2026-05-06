@@ -44,15 +44,19 @@ export const OrdersAdmin = () => {
   });
 
   const fetchOrders = () => {
-    fetch('/api/orders').then(r => r.json()).then(data => {
-      const formatted = data.map((o: any) => ({ ...o, status: o.status === 'pending' ? 'Nouveau' : o.status }));
-      setOrders(formatted);
-    });
+    fetch('/api/orders')
+      .then(r => r.ok ? r.json() : [])
+      .then(data => {
+        const formatted = (Array.isArray(data) ? data : []).filter(o => o).map((o: any) => ({ ...o, status: o.status === 'pending' ? 'Nouveau' : o.status }));
+        setOrders(formatted);
+      });
   };
 
   useEffect(() => {
     fetchOrders();
-    fetch('/api/products').then(r => r.json()).then(setProducts);
+    fetch('/api/products')
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setProducts(Array.isArray(data) ? data : []));
   }, []);
 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -106,27 +110,26 @@ export const OrdersAdmin = () => {
 
   const sendToDelivery = async (company: string) => {
     if (!selected.length) return;
-    if (company === 'Ecotrack') {
-       try {
-         const res = await fetch('/api/orders/delivery/ecotrack', {
-           method: 'POST',
-           headers: { 'Content-Type': 'application/json' },
-           body: JSON.stringify({ orderIds: selected })
-         });
-         const data = await res.json();
-         if (res.ok) {
-           toast.success(`Sent to Ecotrack successfully!`);
-           fetchOrders();
-           setSelected([]);
-           setShowStatusDropdown(false);
-         } else {
-           toast.error(data.error || 'Failed to send to Ecotrack');
-         }
-       } catch (err) {
-         toast.error('Error sending orders to Ecotrack');
-       }
-    } else {
-       toast.success(`Simulation: ${selected.length} orders sent to ${company}`);
+    
+    const endpoint = company === 'Ecotrack' ? '/api/orders/delivery/ecotrack' : '/api/orders/delivery/yalidine';
+    
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderIds: selected })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(`Sent to ${company} successfully!`);
+        fetchOrders();
+        setSelected([]);
+        setShowStatusDropdown(false);
+      } else {
+        toast.error(data.error || `Failed to send to ${company}`);
+      }
+    } catch (err) {
+      toast.error(`Error sending orders to ${company}`);
     }
   };
 

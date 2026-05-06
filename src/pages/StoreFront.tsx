@@ -5,6 +5,39 @@ import { Button } from '../components/ui/button';
 import { ShoppingBag, Sparkles } from 'lucide-react';
 import { firePageView } from '../services/pixelService';
 
+const DEFAULT_CONFIG = {
+  logo: '',
+  brandName: 'My Store',
+  primaryColor: '#4F46E5',
+  templateId: null,
+  sections: [
+    { 
+      id: 'h1', 
+      type: 'hero', 
+      visible: true,
+      settings: {
+        height: '600px',
+        bgImage: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&q=80&w=2670&ixlib=rb-4.0.3',
+        overlayOpacity: 0.4,
+      },
+      blocks: [
+        { id: 'b1', type: 'heading', content: 'Welcome to our store', style: { fontSize: '48px', color: '#ffffff', fontWeight: '900', textAlign: 'left' } },
+        { id: 'b2', type: 'text', content: 'Premium products delivered to your door.', style: { fontSize: '18px', color: '#ffffff', fontWeight: '400', textAlign: 'left' } },
+        { id: 'b3', type: 'button', content: 'Shop All', style: { bgColor: '#4F46E5', color: '#ffffff', borderRadius: '50px', padding: '12px 32px' } }
+      ]
+    },
+    { 
+      id: 'f1', 
+      type: 'featured_collection', 
+      visible: true,
+      settings: {
+        title: 'Trending Now'
+      },
+      blocks: []
+    }
+  ]
+};
+
 export const StoreFront = () => {
   const { products, fetchProducts } = useStore();
   const [config, setConfig] = useState<any>(null);
@@ -15,9 +48,15 @@ export const StoreFront = () => {
     fetch('/api/settings/store_config')
       .then(r => r.json())
       .then(data => {
-        if (Object.keys(data).length > 0) setConfig(data);
+        if (data && Object.keys(data).length > 0 && !data.error) {
+          setConfig(data);
+        } else {
+          setConfig(DEFAULT_CONFIG);
+        }
       })
-      .catch(() => {});
+      .catch(() => {
+        setConfig(DEFAULT_CONFIG);
+      });
   }, []);
 
   if (!config) {

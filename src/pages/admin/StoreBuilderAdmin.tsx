@@ -181,7 +181,7 @@ const FeaturedCollectionSection = ({ section, onClick, onOverlay: SectionOverlay
   const [products, setProducts] = useState<any[]>([]);
 
   useEffect(() => {
-    fetch('/api/products').then(r => r.json()).then(setProducts);
+    fetch('/api/products').then(r => r.json()).then(data => setProducts(Array.isArray(data) ? data : []));
   }, []);
 
   return (
@@ -241,7 +241,7 @@ export const StoreBuilderAdmin = () => {
         if (Object.keys(configData).length === 0) setConfig(DEFAULT_CONFIG);
         else setConfig(configData);
         
-        setTemplates(templatesData);
+        setTemplates(Array.isArray(templatesData) ? templatesData : []);
         setLoading(false);
       } catch (err) {
         setConfig(DEFAULT_CONFIG);
@@ -536,7 +536,7 @@ export const StoreBuilderAdmin = () => {
 
              <div className="h-px bg-[#F1F5F9] my-4" />
 
-             {config.sections.map((section: any, idx: number) => (
+             {(config?.sections || []).map((section: any, idx: number) => (
                <div 
                  key={section.id} 
                  className={`group border ${editingSectionId === section.id ? 'border-indigo-500 ring-2 ring-indigo-50/10 shadow-lg' : 'border-[#E2E8F0]'} rounded-xl overflow-hidden bg-white transition-all`}
@@ -565,7 +565,7 @@ export const StoreBuilderAdmin = () => {
                           <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Blocks</span>
                           <button onClick={() => setEditingBlockId(editingBlockId === 'add' ? null : 'add')} className="p-1 hover:bg-white rounded text-indigo-600 border border-transparent hover:border-indigo-100"><Plus size={12} /></button>
                         </div>
-                        {section.blocks?.map((block: any) => (
+                        {(section.blocks || []).map((block: any) => (
                           <div 
                             key={block.id}
                             onClick={() => setEditingBlockId(block.id)}
@@ -611,7 +611,7 @@ export const StoreBuilderAdmin = () => {
                     <div className="w-2.5 h-2.5 rounded-full bg-[#27C93F]" />
                   </div>
                   <div className="flex-1 bg-white h-6 rounded px-2 text-[10px] flex items-center text-gray-400 border border-[#E2E8F0]">
-                    {config.brandName.toLowerCase().replace(' ', '')}.com
+                    {(config?.brandName || '').toLowerCase().replace(' ', '')}.com
                   </div>
                 </div>
               )}
@@ -635,7 +635,7 @@ export const StoreBuilderAdmin = () => {
 
                   {/* Dynamic Sections */}
                   <div className="space-y-0">
-                    {config.sections.map((section: any, sectionIdx: number) => {
+                    {(config?.sections || []).map((section: any, sectionIdx: number) => {
                       if (!section.visible) return null;
                       
                       const isEditingSection = editingSectionId === section.id;
@@ -733,7 +733,7 @@ export const StoreBuilderAdmin = () => {
                                    <div className="absolute inset-0 bg-black" style={{ opacity: section.settings?.overlayOpacity || 0.4 }} />
                                 </div>
                                 <div className="relative z-10 max-w-xl text-white space-y-6">
-                                   {section.blocks?.map((block: any, bIdx: number) => {
+                                   {(section.blocks || []).map((block: any, bIdx: number) => {
                                       const style = block.style || {};
                                       const content = (
                                         <>
@@ -776,7 +776,7 @@ export const StoreBuilderAdmin = () => {
                                    {section.settings?.bgImage && <img src={section.settings.bgImage} className="w-full h-full object-cover" />}
                                 </div>
                                 <div className="space-y-6">
-                                   {section.blocks?.map((block: any, bIdx: number) => {
+                                   {(section.blocks || []).map((block: any, bIdx: number) => {
                                       const style = block.style || {};
                                       const content = (
                                         <>

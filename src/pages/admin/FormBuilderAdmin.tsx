@@ -6,6 +6,13 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogTrigger 
+} from '../../components/ui/dialog';
 import { DHD_LOGO } from '../../lib/assets';
 
 const BLOCK_TYPES = [
@@ -36,17 +43,22 @@ export const FormBuilderAdmin = () => {
   const [error, setError] = useState<string | null>(null);
   const [blocks, setBlocks] = useState<any[]>([]);
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   useEffect(() => {
+    console.log('Fetching product with ID:', id);
     fetch(`/api/products/${id}`)
       .then(async r => {
+        console.log('Response status:', r.status);
         if (!r.ok) {
            const data = await r.json().catch(() => ({}));
+           console.error('Error response:', data);
            throw new Error(data.error || `HTTP error! status: ${r.status}`);
         }
         return r.json();
       })
       .then(data => {
+        console.log('Product data:', data);
         if (!data || data.error) throw new Error(data?.error || 'Product not found');
         setProduct(data);
         const config = data.landing_page_config;
@@ -57,6 +69,7 @@ export const FormBuilderAdmin = () => {
         }
       })
       .catch(err => {
+        console.error('Fetch error:', err);
         setError(err.message);
         toast.error('Failed to load product data');
       });
@@ -181,18 +194,33 @@ export const FormBuilderAdmin = () => {
           <div>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-[2px]">Form Elements</h3>
-              <div className="flex gap-1 flex-wrap">
-                {BLOCK_TYPES.map(bt => (
-                  <button 
-                    key={bt.type}
-                    onClick={() => addBlock(bt.type)}
-                    className="p-1.5 hover:bg-indigo-50 hover:text-indigo-600 rounded bg-[#F8FAFC] text-gray-500 transition-colors"
-                    title={bt.label}
-                  >
-                    {bt.icon}
-                  </button>
-                ))}
-              </div>
+              <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm" variant="outline" className="text-xs h-8">
+                    <Plus size={14} className="mr-1" /> Add Block
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[425px]">
+                  <DialogHeader>
+                    <DialogTitle>Add Block</DialogTitle>
+                  </DialogHeader>
+                  <div className="grid grid-cols-2 gap-2 mt-4">
+                    {BLOCK_TYPES.map(bt => (
+                      <Button 
+                        key={bt.type} 
+                        variant="ghost" 
+                        className="justify-start gap-2 h-auto py-3 px-3"
+                        onClick={() => {
+                          addBlock(bt.type);
+                          setIsModalOpen(false);
+                        }}
+                      >
+                        {bt.icon} {bt.label}
+                      </Button>
+                    ))}
+                  </div>
+                </DialogContent>
+              </Dialog>
             </div>
 
             <div className="space-y-3">
