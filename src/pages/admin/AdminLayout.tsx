@@ -14,6 +14,7 @@ export const AdminLayout = () => {
 
   const handleLogout = () => {
     localStorage.removeItem('saas_token');
+    localStorage.removeItem('admin_api_key');
     navigate('/login');
   };
 

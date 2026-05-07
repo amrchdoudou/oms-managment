@@ -68,3 +68,23 @@ export const firePurchase = (order: any, total: number) => {
     (window as any).ttq.track('CompletePayment', { value: total, currency: 'DZD' });
   }
 };
+
+export const fireTestEvent = (product: any, platform: string) => {
+  const payload = {
+    content_name: product.name || 'Test Pixel Hit',
+    value: product.price || 1000,
+    currency: 'DZD'
+  };
+
+  if (platform === 'meta' && typeof (window as any).fbq === 'function') {
+    (window as any).fbq('track', 'Lead', payload);
+    return JSON.stringify({ event: 'Lead (Meta)', payload }, null, 2);
+  }
+  
+  if (platform === 'tiktok' && typeof (window as any).ttq === 'object') {
+    (window as any).ttq.track('SubmitForm', payload);
+    return JSON.stringify({ event: 'SubmitForm (TikTok)', payload }, null, 2);
+  }
+  
+  return JSON.stringify({ error: `Pixel not loaded for platform: ${platform}. Ensure adblockers are disabled.` }, null, 2);
+};

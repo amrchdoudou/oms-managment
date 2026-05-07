@@ -6,8 +6,9 @@ import { Label } from '../../components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { useStore } from '../../store';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Activity } from 'lucide-react';
 import { toast } from 'sonner';
+import { fireTestEvent } from '../../services/pixelService';
 
 export const SettingsAdmin = () => {
   const { pixels, fetchPixels } = useStore();
@@ -43,6 +44,17 @@ export const SettingsAdmin = () => {
     toast.success('Pixel removed');
   };
 
+  const testPixel = (platform: string) => {
+    const result = fireTestEvent({}, platform);
+    toast('Pixel Test Fired', {
+      description: (
+        <pre className="mt-2 w-[340px] rounded-md bg-slate-950 p-4">
+          <code className="text-white text-xs">{result}</code>
+        </pre>
+      ),
+    });
+  };
+
   const saveSettings = async (key: string, value: any) => {
     await fetch(`/api/settings/${key}`, {
       method: 'POST',
@@ -67,7 +79,10 @@ export const SettingsAdmin = () => {
         <TabsContent value="pixels" className="space-y-6 mt-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-white border border-[#E2E8F0] shadow-sm rounded-xl p-6">
-              <h3 className="font-bold text-lg text-[#1A202C] mb-6">Add Pixel</h3>
+              <h3 className="font-bold text-lg text-[#1A202C] mb-2">Add Pixel</h3>
+              <p className="text-xs text-gray-500 mb-6 bg-gray-50 p-3 rounded-lg border border-gray-100">
+                <strong>Important:</strong> When using Facebook's "Test Events" tool, use your actual deployed website URL (e.g. <code>{window.location.origin}</code>), <strong>not</strong> the AI Studio platform link. Otherwise, Test Events will not be detected! Ensure ad-blockers are disabled.
+              </p>
               <form onSubmit={handleAddPixel} className="space-y-4">
                   <div className="space-y-2">
                     <Label>Platform</Label>
@@ -101,9 +116,15 @@ export const SettingsAdmin = () => {
                       </div>
                       <p className="text-xs text-[#718096] font-mono">ID: {p.pixel_id}</p>
                     </div>
-                    <button onClick={() => deletePixel(p.id)} className="p-2 text-[#718096] hover:text-red-600 transition-colors">
-                      <Trash2 size={16} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => testPixel(p.platform)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-indigo-50 text-indigo-700 rounded hover:bg-indigo-100 transition-colors">
+                        <Activity size={14} />
+                        Test
+                      </button>
+                      <button onClick={() => deletePixel(p.id)} className="p-2 text-[#718096] hover:text-red-600 transition-colors bg-white rounded shadow-sm border border-gray-200">
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </div>
                 ))}
                 {pixels.length === 0 && <p className="text-[#718096] text-sm">No pixels installed.</p>}

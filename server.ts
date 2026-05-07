@@ -6,23 +6,57 @@ import { PrismaClient } from '@prisma/client';
 import fs from 'fs';
 import multer from 'multer';
 
+// Prevent Cloudinary initialization crash with invalid URL
+if (process.env.CLOUDINARY_URL && !process.env.CLOUDINARY_URL.startsWith('cloudinary://')) {
+  console.warn("Invalid CLOUDINARY_URL protocol. URL should begin with 'cloudinary://'. Ignoring CLOUDINARY_URL.");
+  delete process.env.CLOUDINARY_URL;
+}
+
 // Ensure uploads dir exists in the project root
 const uploadsDir = path.join(process.cwd(), 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Multer for upload simulation
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadsDir)
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9)
-    cb(null, uniqueSuffix + '-' + file.originalname)
-  }
-});
+// Check if Cloudinary is configured
+const hasCloudinary = !!process.env.CLOUDINARY_URL || (!!process.env.CLOUDINARY_CLOUD_NAME && !!process.env.CLOUDINARY_API_KEY && !!process.env.CLOUDINARY_API_SECRET);
+
+// Multer for upload
+const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
+
+const uploadFile = async (file: Express.Multer.File): Promise<string> => {
+  if (hasCloudinary) {
+    const cloudinaryObj = await import('cloudinary');
+    const cloudinary = cloudinaryObj.default?.v2 || cloudinaryObj.v2;
+
+    if (!process.env.CLOUDINARY_URL) {
+      cloudinary.config({
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+        api_key: process.env.CLOUDINARY_API_KEY,
+        api_secret: process.env.CLOUDINARY_API_SECRET
+      });
+    }
+
+    return new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        { folder: "store_products" },
+        (error: any, result: any) => {
+          if (error) reject(error);
+          else resolve(result?.secure_url || '');
+        }
+      );
+      stream.end(file.buffer);
+    });
+  } else {
+    // Fallback to local
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const filename = uniqueSuffix + '-' + file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const filepath = path.join(uploadsDir, filename);
+    await fs.promises.writeFile(filepath, file.buffer);
+    return '/uploads/' + filename;
+  }
+};
 
 // Initialize Prisma
 let prisma: PrismaClient;
@@ -45,12 +79,9 @@ try {
 
   prisma = new PrismaClient({ datasources: { db: { url: dbUrl } } });
 } catch (e: any) {
+  // FIXED: 2
   console.error('Failed to initialize Prisma:', e.message);
-  // Create a dummy instance or handle error gracefully to prevent immediate app crash 
-  // if Prisma is not absolutely required for all routes.
-  // Given current app logic, Prisma is highly coupled, so throwing here is likely correct
-  // but we provide a catch to log it properly.
-  throw e;
+  prisma = null as any;
 }
 
 // Validate at startup
@@ -68,6 +99,28 @@ async function startServer() {
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
   app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
+  // FIXED: 1
+  const apiKeyAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (req.path === '/api/health' || 
+        (req.path === '/api/orders' && req.method === 'POST') || 
+        (req.path === '/api/products' && req.method === 'GET') ||
+        (req.path.match(/^\/api\/products\/\d+$/) && req.method === 'GET')) {
+      return next();
+    }
+    
+    if (!req.path.startsWith('/api/')) {
+      return next();
+    }
+
+    const key = req.headers['x-api-key'];
+    if (!key || key !== process.env.ADMIN_API_KEY) {
+      return res.status(401).json({ error: 'Unauthorized: Invalid or missing x-api-key header' });
+    }
+    next();
+  };
+
+  app.use(apiKeyAuth);
+
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok' });
   });
@@ -75,7 +128,8 @@ async function startServer() {
   // Middleware to check database connection
   const checkDb = (req: express.Request, res: express.Response, next: express.NextFunction) => {
     if (!prisma) {
-      return res.status(500).json({ error: 'Database not initialized.' });
+      // FIXED: 2
+      return res.status(503).json({ error: 'Database not initialized.' });
     }
     next();
   };
@@ -212,9 +266,9 @@ async function startServer() {
   app.post('/api/products', checkDb, upload.array('images', 5), async (req, res) => {
     try {
       const { name, description, price, variants, inventory } = req.body;
-      let imagePaths = [];
+      let imagePaths: string[] = [];
       if (req.files && Array.isArray(req.files)) {
-        imagePaths = req.files.map(f => '/uploads/' + f.filename);
+        imagePaths = await Promise.all(req.files.map(f => uploadFile(f)));
       }
 
       const product = await prisma!.product.create({
@@ -236,13 +290,25 @@ async function startServer() {
 
   app.put('/api/products/:id', checkDb, upload.array('images', 5), async (req, res) => {
     try {
-      const { name, description, price, variants, inventory } = req.body;
+      const { name, description, price, variants, inventory, existing_images } = req.body;
+      
+      let imagePaths: string[] = [];
+      if (existing_images) {
+        imagePaths = Array.isArray(existing_images) ? existing_images : [existing_images];
+      }
+      
+      if (req.files && Array.isArray(req.files)) {
+        const newPaths = await Promise.all(req.files.map(f => uploadFile(f)));
+        imagePaths = [...imagePaths, ...newPaths];
+      }
+
       await prisma!.product.update({
         where: { id: Number(req.params.id) },
         data: { 
           name, 
           description, 
           price: parseFloat(price) || 0, 
+          ...(imagePaths.length > 0 && { images: imagePaths }),
           variants: JSON.parse(variants || '[]'), 
           inventory: JSON.parse(inventory || '{}') 
         }
@@ -251,7 +317,6 @@ async function startServer() {
     } catch(err: any) {
       console.error('Error updating product:', err);
       res.json([]);
-
     }
   });
 
@@ -387,6 +452,7 @@ async function startServer() {
       
       const payloadOrders: any = {};
       const communesCache: Record<number, any[]> = {};
+      const warnings: string[] = []; // FIXED: 3
       
       const levenshtein = (a: string, b: string) => {
         if (a.length === 0) return b.length;
@@ -469,8 +535,10 @@ async function startServer() {
               const wilayaNorm = normalize(wilayaName);
               const wilayaCommune = communesCache[wilayaIdInt].find((c: any) => normalize(c.nom) === wilayaNorm);
               if (wilayaCommune && wilayaCommune.has_stop_desk === 1) {
+                warnings.push(`Order #${o.id}: commune ${selectedCommuneObj.nom} has no stop desk, fell back to ${wilayaCommune.nom}`); // FIXED: 3
                 targetCommune = wilayaCommune.nom;
               } else {
+                 warnings.push(`Order #${o.id}: commune ${selectedCommuneObj.nom} has no stop desk and couldn't find fallback`); // FIXED: 3
                  console.log("Warning: Requested stop desk in commune without one, and couldn't find fallback.", targetCommune);
               }
             }
@@ -532,7 +600,7 @@ async function startServer() {
          }
       }
 
-      res.json({ success: true, message: 'Orders processed', results: data?.results || data });
+      res.json({ success: true, message: 'Orders processed', results: data?.results || data, warnings }); // FIXED: 3
 
     } catch(err: any) {
       console.error(err); res.status(500).json({ error: err.message });
@@ -707,6 +775,7 @@ async function startServer() {
             where: { id: orderId },
             data: { tracking_number: val.tracking, status: 'Expédié' }
          });
+         syncCount++; // FIXED: 4
       }
    }
 }

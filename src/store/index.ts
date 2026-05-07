@@ -18,14 +18,22 @@ export const useStore = create<StoreState>((set) => ({
   pixels: [],
   settings: {},
   fetchProducts: async () => {
-    const res = await fetch(`${getApiBase()}/api/products`);
-    const data = await res.json();
-    set({ products: data });
+    try {
+      const res = await fetch(`${getApiBase()}/api/products`);
+      const data = await res.json();
+      set({ products: Array.isArray(data) ? data : [] });
+    } catch {
+      set({ products: [] });
+    }
   },
   fetchPixels: async () => {
-    const res = await fetch(`${getApiBase()}/api/pixels`);
-    const data = await res.json();
-    set({ pixels: data });
+    try {
+      const res = await fetch(`${getApiBase()}/api/pixels`);
+      const data = await res.json();
+      set({ pixels: Array.isArray(data) ? data : [] });
+    } catch {
+      set({ pixels: [] });
+    }
   },
   fetchSettings: async () => {
     const res = await fetch(`${getApiBase()}/api/settings/delivery_fees`);

@@ -10,13 +10,24 @@ export const Login = () => {
   const [password, setPassword] = useState('');
   const navigate = useNavigate();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Simulate login for SaaS
     if (email && password) {
-      localStorage.setItem('saas_token', 'logged_in');
-      toast.success('Logged in successfully');
-      navigate('/admin');
+      try {
+        const res = await fetch('/api/orders', {
+          headers: { 'x-api-key': password }
+        });
+        if (res.status === 401) {
+          toast.error('Invalid Email or Password');
+          return;
+        }
+        localStorage.setItem('saas_token', 'logged_in');
+        localStorage.setItem('admin_api_key', password);
+        toast.success('Logged in successfully');
+        navigate('/admin');
+      } catch (err) {
+        toast.error('Login failed');
+      }
     }
   };
 

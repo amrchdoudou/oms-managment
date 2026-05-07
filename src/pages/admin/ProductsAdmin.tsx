@@ -120,6 +120,12 @@ export const ProductsAdmin = () => {
     formData.append('variants', JSON.stringify(currentParsedVariants));
     formData.append('inventory', JSON.stringify(inventory));
     
+    if (editingProduct && editingProduct.images) {
+      editingProduct.images.forEach((img: string) => {
+        formData.append('existing_images', img);
+      });
+    }
+
     if (images) {
       Array.from(images as any).forEach((i) => {
         formData.append('images', i as Blob);

@@ -195,7 +195,7 @@ export const FormBuilderAdmin = () => {
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-[2px]">Form Elements</h3>
               <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-                <DialogTrigger asChild>
+                <DialogTrigger>
                   <Button size="sm" variant="outline" className="text-xs h-8">
                     <Plus size={14} className="mr-1" /> Add Block
                   </Button>
