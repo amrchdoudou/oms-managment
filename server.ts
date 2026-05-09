@@ -7,9 +7,17 @@ import fs from 'fs';
 import multer from 'multer';
 
 // Prevent Cloudinary initialization crash with invalid URL
-if (process.env.CLOUDINARY_URL && !process.env.CLOUDINARY_URL.startsWith('cloudinary://')) {
-  console.warn("Invalid CLOUDINARY_URL protocol. URL should begin with 'cloudinary://'. Ignoring CLOUDINARY_URL.");
-  delete process.env.CLOUDINARY_URL;
+if (process.env.CLOUDINARY_URL) {
+  let url = process.env.CLOUDINARY_URL.trim();
+  if (url.startsWith('CLOUDINARY_URL=')) {
+    url = url.replace('CLOUDINARY_URL=', '').trim();
+  }
+  if (url.startsWith('cloudinary://')) {
+    process.env.CLOUDINARY_URL = url;
+  } else {
+    console.warn("Invalid CLOUDINARY_URL protocol. URL should begin with 'cloudinary://'. Ignoring CLOUDINARY_URL.");
+    // Don't fully delete if they provided other vars
+  }
 }
 
 // Ensure uploads dir exists in the project root
@@ -30,13 +38,20 @@ const uploadFile = async (file: Express.Multer.File): Promise<string> => {
     const cloudinaryObj = await import('cloudinary');
     const cloudinary = cloudinaryObj.default?.v2 || cloudinaryObj.v2;
 
-    if (!process.env.CLOUDINARY_URL) {
-      cloudinary.config({
-        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-        api_key: process.env.CLOUDINARY_API_KEY,
-        api_secret: process.env.CLOUDINARY_API_SECRET
-      });
+    // Check for common errors in Cloudinary environment variables.
+    if (process.env.CLOUDINARY_API_SECRET === '**********') {
+      console.warn('\n[\u26A0\uFE0F WARNING] Your CLOUDINARY_API_SECRET is set to "**********". Please go to Settings > Environment Variables in AI Studio and put your actual Cloudinary secret.\n');
     }
+    
+    if (process.env.CLOUDINARY_URL?.startsWith('CLOUDINARY_URL=')) {
+      console.warn('\n[\u26A0\uFE0F WARNING] Your CLOUDINARY_URL contains "CLOUDINARY_URL=" twice. Please remove it from the start in Settings > Environment Variables.\n');
+    }
+
+    cloudinary.config({
+      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+      api_key: process.env.CLOUDINARY_API_KEY,
+      api_secret: process.env.CLOUDINARY_API_SECRET
+    });
 
     return new Promise((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
@@ -62,10 +77,15 @@ const uploadFile = async (file: Express.Multer.File): Promise<string> => {
 let prisma: PrismaClient;
 
 try {
-  let dbUrl = process.env.DATABASE_URL?.trim();
+  let dbUrl = (process.env.DATABASE_URL || '').trim();
   console.log('DEBUG: DATABASE_URL exists:', !!dbUrl);
   if (!dbUrl) {
     throw new Error('DATABASE_URL environment variable is not set.');
+  }
+
+  // Handle double "DATABASE_URL=" if user pasted it in
+  if (dbUrl.includes('DATABASE_URL=')) {
+    dbUrl = dbUrl.replace(/DATABASE_URL=/g, '').trim();
   }
 
   if (!dbUrl.startsWith('postgresql://') && !dbUrl.startsWith('postgres://')) {
@@ -76,19 +96,31 @@ try {
   if (!dbUrl.includes('pgbouncer=true')) {
     dbUrl += (dbUrl.includes('?') ? '&' : '?') + 'pgbouncer=true';
   }
+  
+  if (!dbUrl.includes('connection_limit=')) {
+    dbUrl += '&connection_limit=1';
+  }
 
   prisma = new PrismaClient({ datasources: { db: { url: dbUrl } } });
+  
+  // Test connection
+  prisma.$connect()
+    .then(() => console.log('Successfully connected to Database via Prisma'))
+    .catch((err) => {
+      const msg = err.message || String(err);
+      if (msg.includes('Authentication failed')) {
+        console.error('FATAL DB ERROR: Authentication failed. This usually means the password in your DATABASE_URL is incorrect. Please double-check your database password in the settings menu.');
+      } else if (msg.includes('P1001')) {
+        console.error('FATAL DB ERROR: Reachability issues. Your database might be sleeping or the URL is wrong.');
+      } else {
+        console.error('Prisma connection error:', msg);
+      }
+    });
 } catch (e: any) {
   // FIXED: 2
   console.error('Failed to initialize Prisma:', e.message);
   prisma = null as any;
 }
-
-// Validate at startup
-if (!process.env.DATABASE_URL) {
-  console.error('DATABASE_URL environment variable is not set.');
-}
-
 
 async function startServer() {
   const app = express();
@@ -99,12 +131,95 @@ async function startServer() {
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
   app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
+  // Middleware to check database connection
+  const checkDb = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (!prisma) {
+      console.error('Database check failed: Prisma is not initialized');
+      return res.status(503).json({ error: 'Database connection failed. Please ensure you have set a valid DATABASE_URL in the settings menu.' });
+    }
+    
+    // We don't block the request here because we want the specific route to handle the query error
+    // but we can check if it already failed.
+    next();
+  };
+
+  // Diagnostic route for database health
+  app.get('/api/debug/db/test', async (req, res) => {
+    // Return early if no prisma
+    if (!prisma) {
+      return res.status(500).json({ error: 'Prisma Client not initialized. Check your DATABASE_URL.' });
+    }
+
+    // Create a timeout promise
+    let timeoutId: any;
+    const timeout = new Promise((_, reject) => 
+      timeoutId = setTimeout(() => reject(new Error('Connection timed out after 8s')), 8000)
+    );
+
+    try {
+      console.log('DEBUG: Testing DB connection...');
+      
+      // Attempt a real query with timeout safeguard
+      const result = await Promise.race([
+        prisma.$queryRaw`SELECT 1 as connected`,
+        timeout
+      ]);
+      
+      clearTimeout(timeoutId);
+      console.log('DEBUG: DB connection test successful:', result);
+      
+      const userCount = await prisma.user.count();
+      res.json({ 
+        status: 'connected', 
+        message: 'Successfully connected and queried database',
+        userCount 
+      });
+    } catch (err: any) {
+      if (timeoutId) clearTimeout(timeoutId);
+      console.error('DB TEST FAIL:', err);
+      let friendlyError = err.message || String(err);
+      
+      if (friendlyError.includes('Authentication failed')) {
+        friendlyError = 'Authentication failed: The password in your DATABASE_URL is incorrect.';
+      } else if (friendlyError.includes('P1001') || friendlyError.includes('timed out')) {
+        friendlyError = 'Connection Timeout: Ensure you are using the Supabase Transaction Pooler URL (Host ends with pooler.supabase.com, Port is 6543, and ends with ?pgbouncer=true). The port 5432 URL is not reachable from this environment.';
+      } else if (friendlyError.includes('P2021') || friendlyError.includes('does not exist')) {
+         friendlyError = 'Database schema error: Table "User" not found. please wait for the database sync to complete.';
+      }
+      
+      res.status(500).json({ error: friendlyError });
+    }
+  });
+
+  app.get('/api/debug/db', async (req, res) => {
+    try {
+      if (!prisma) throw new Error('Prisma not initialized');
+      const userCount = await prisma.user.count();
+      const storeCount = await prisma.store.count();
+      res.json({ 
+        status: 'ok', 
+        users: userCount, 
+        stores: storeCount 
+      });
+    } catch (err: any) {
+      console.error('DB Debug Error:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // FIXED: 1
   const apiKeyAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
     if (req.path === '/api/health' || 
+        req.path === '/api/signup' ||
+        req.path === '/api/login' ||
+        req.path === '/api/debug/db' ||
         (req.path === '/api/orders' && req.method === 'POST') || 
         (req.path === '/api/products' && req.method === 'GET') ||
-        (req.path.match(/^\/api\/products\/\d+$/) && req.method === 'GET')) {
+        (req.path.match(/^\/api\/products\/\d+$/) && req.method === 'GET') ||
+        (req.path === '/api/pixels' && req.method === 'GET') ||
+        (req.path === '/api/settings/store_config' && req.method === 'GET') ||
+        (req.path === '/api/settings/delivery_fees' && req.method === 'GET') ||
+        (req.path === '/api/settings/shipping_fees' && req.method === 'GET')) {
       return next();
     }
     
@@ -112,8 +227,14 @@ async function startServer() {
       return next();
     }
 
+    if (req.method === 'OPTIONS') {
+      return next();
+    }
+
     const key = req.headers['x-api-key'];
-    if (!key || key !== process.env.ADMIN_API_KEY) {
+    const expectedKey = process.env.ADMIN_API_KEY || 'admin123';
+    
+    if (!key || key !== expectedKey) {
       return res.status(401).json({ error: 'Unauthorized: Invalid or missing x-api-key header' });
     }
     next();
@@ -121,18 +242,121 @@ async function startServer() {
 
   app.use(apiKeyAuth);
 
+  app.post('/api/signup', checkDb, async (req, res) => {
+    try {
+      console.log('--- SIGNUP REQUEST RECEIVED ---', req.body.email);
+      let { email, password, storeName } = req.body;
+      if (!email || !password || !storeName) {
+        return res.status(400).json({ error: 'Missing fields' });
+      }
+
+      email = email.trim().toLowerCase();
+      password = password.trim(); 
+      storeName = storeName.trim();
+
+      // Check if user exists
+      console.log('Querying existing user...');
+      const existingUser = await prisma.user.findUnique({ where: { email } });
+      console.log('Existing user check done', !!existingUser);
+
+      if (existingUser) {
+        return res.status(400).json({ error: 'User already exists' });
+      }
+
+      // Create store
+      console.log('Creating store...');
+      const store = await prisma.store.create({
+        data: {
+          name: storeName,
+          slug: storeName.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Date.now()
+        }
+      });
+      console.log('Store created:', store.id);
+
+      // Create user
+      console.log('Creating user...');
+      const user = await prisma.user.create({
+        data: {
+          email,
+          password, 
+          store_id: store.id
+        }
+      });
+      console.log('SUCCESS: User created:', user.id, 'with store:', store.id);
+      
+      res.json({ success: true, userId: user.id });
+    } catch (err: any) {
+      console.error('SIGNUP ERROR:', err);
+      let errorMsg = err.message || String(err);
+      if (errorMsg.includes('Authentication failed')) {
+        errorMsg = 'Database Authentication Failed. Please check your database password in the settings.';
+      }
+      res.status(500).json({ error: 'Signup error: ' + errorMsg });
+    }
+  });
+
+  // Seed route for debugging
+  app.get('/api/debug/seed', checkDb, async (req, res) => {
+    try {
+      const email = 'admin@store.com';
+      const existing = await prisma.user.findUnique({ where: { email } });
+      if (existing) return res.json({ message: 'Admin already exists' });
+
+      const store = await prisma.store.create({
+        data: { name: 'Admin Store', slug: 'admin-store-' + Date.now() }
+      });
+      const user = await prisma.user.create({
+        data: { email, password: 'admin123', store_id: store.id }
+      });
+      res.json({ success: true, user });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/login', checkDb, async (req, res) => {
+    try {
+      console.log('Login attempt for:', req.body?.email);
+      let { email, password } = req.body;
+      if (!email || !password) {
+        return res.status(400).json({ error: 'Email and password required' });
+      }
+
+      email = email.trim().toLowerCase();
+      password = password.trim();
+
+      const user = await prisma.user.findUnique({
+        where: { email },
+        include: { store: true }
+      });
+
+      if (!user) {
+        console.log('Login failed: User not found', email);
+        return res.status(401).json({ error: 'User not found' });
+      }
+
+      if (user.password !== password) {
+        console.log('Login failed: Password mismatch for', email);
+        return res.status(401).json({ error: 'Invalid password' });
+      }
+
+      const apiKey = process.env.ADMIN_API_KEY || 'admin123';
+      console.log('Login successful for:', user.email);
+      
+      res.json({ 
+        success: true, 
+        token: 'logged_in',
+        apiKey: apiKey
+      });
+    } catch (err: any) {
+      console.error('LOGIN ERROR:', err);
+      res.status(500).json({ error: 'Login error: ' + (err.code || err.message) });
+    }
+  });
+
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok' });
   });
-
-  // Middleware to check database connection
-  const checkDb = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    if (!prisma) {
-      // FIXED: 2
-      return res.status(503).json({ error: 'Database not initialized.' });
-    }
-    next();
-  };
 
   // ====== STORE CONFIGURATION ROUTES ======
 
@@ -225,9 +449,36 @@ async function startServer() {
     }
   });
 
-  // ====== API ROUTES ======
+// Helper for Ecotrack normalization
+const normalizeEcotrackToken = (token: string) => {
+  if (!token) return '';
+  const cleaned = token.replace(/^Bearer\s*/i, '').trim();
+  return `Bearer ${cleaned}`;
+};
 
-  // Helper for safe JSON parsing
+const getEcotrackBaseUrl = (url?: string) => {
+  if (!url) return 'https://app.ecotrack.dz';
+  let cleaned = url.trim().replace(/\/+$/, '');
+  
+  // DHD specific shortcut
+  if (cleaned.toLowerCase() === 'dhd') return 'https://dhd.ecotrack.dz';
+  
+  // Clean common suffixes
+  const suffixes = ['/api/v1/create/orders', '/api/v1/create/order', '/api/v1/create', '/api/v1', '/create/orders', '/create/order', '/products'];
+  for (const suffix of suffixes) {
+    if (cleaned.toLowerCase().endsWith(suffix)) {
+      cleaned = cleaned.slice(0, -suffix.length);
+      break;
+    }
+  }
+  return cleaned.replace(/\/+$/, '');
+};
+
+const getEcotrackHeaders = (token: string) => ({
+  'Authorization': normalizeEcotrackToken(token),
+  'Content-Type': 'application/json',
+  'Accept': 'application/json'
+});
   const safeParse = (str: any, fallback: any = []) => {
     if (typeof str !== 'string') return str || fallback;
     try {
@@ -271,6 +522,9 @@ async function startServer() {
         imagePaths = await Promise.all(req.files.map(f => uploadFile(f)));
       }
 
+      // Sort images to prioritize external URLs over local ones
+      imagePaths.sort((a, b) => (b.startsWith('http') ? 1 : 0) - (a.startsWith('http') ? 1 : 0));
+
       const product = await prisma!.product.create({
         data: { 
           name, 
@@ -301,6 +555,9 @@ async function startServer() {
         const newPaths = await Promise.all(req.files.map(f => uploadFile(f)));
         imagePaths = [...imagePaths, ...newPaths];
       }
+
+      // Sort images to prioritize external URLs over local ones
+      imagePaths.sort((a, b) => (b.startsWith('http') ? 1 : 0) - (a.startsWith('http') ? 1 : 0));
 
       await prisma!.product.update({
         where: { id: Number(req.params.id) },
@@ -410,22 +667,14 @@ async function startServer() {
       }
       
       const apiKeys = apiKeysSetting.value as any;
-      const ecotrackUrlStr = apiKeys.ecotrack_url || 'https://app.ecotrack.dz';
+      const ecotrackUrlStr = apiKeys.ecotrack_url;
       const ecotrackToken = apiKeys.ecotrack_token;
       if (!ecotrackToken) {
         return res.status(400).json({ error: 'Ecotrack API token not found in settings' });
       }
       
-      // ... (keep the same logic for Ecotrack Base URL cleaning) ...
-      let ecotrackBaseUrl = ecotrackUrlStr.trim().replace(/\/+$/, '');
-      const suffixes = ['/api/v1/create/orders', '/api/v1/create/order', '/api/v1/create', '/api/v1', '/create/orders', '/create/order'];
-      for (const suffix of suffixes) {
-        if ((ecotrackBaseUrl || '').toLowerCase().endsWith(suffix)) {
-          ecotrackBaseUrl = ecotrackBaseUrl.slice(0, -suffix.length);
-          break;
-        }
-      }
-      ecotrackBaseUrl = ecotrackBaseUrl.replace(/\/+$/, '');
+      const ecotrackBaseUrl = getEcotrackBaseUrl(ecotrackUrlStr);
+      const headers = getEcotrackHeaders(ecotrackToken);
 
       // Get orders
       const orders = await prisma!.order.findMany({
@@ -556,14 +805,14 @@ async function startServer() {
           commune: targetCommune, 
           code_wilaya: wilayaIdInt,
           montant: parseInt(o.total_price.toString()) || 0,
-          remarque: 'Sent from COD-Manager',
-          note: 'Sent from COD-Manager',
+          remarque: 'Sent from Store-AI',
+          note: 'Sent from Store-AI',
           produit: (o.product as any)?.name || `Produit #${o.product_id}`,
           stock: 0,
           quantite: 1,
           type: o.stop_desk === 1 ? 0 : 1, // Usually 0 for desk, 1 for home delivery
           stop_desk: o.stop_desk || 0,
-          boutique: "COD-Manager"
+          boutique: "Store-AI"
         };
       }
 
@@ -571,11 +820,7 @@ async function startServer() {
       
       const response = await fetch(`${ecotrackBaseUrl}/api/v1/create/orders`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': ecotrackToken.startsWith('Bearer ') ? ecotrackToken : `Bearer ${ecotrackToken}`,
-          'Accept': 'application/json'
-        },
+        headers,
         body: JSON.stringify({ orders: payloadOrders })
       });
 
@@ -717,18 +962,10 @@ async function startServer() {
       
       const apiKeys = setting.value as any;
       const ecotrackToken = apiKeys.ecotrack_token;
-      const ecotrackUrlStr = apiKeys.ecotrack_url || 'https://app.ecotrack.dz';
+      const ecotrackUrlStr = apiKeys.ecotrack_url;
       if (!ecotrackToken) return res.status(400).json({ error: 'Ecotrack API token missing' });
 
-      let ecotrackBaseUrl = ecotrackUrlStr.trim().replace(/\/+$/, '');
-      const suffixes = ['/api/v1/create/orders', '/api/v1/create/order', '/api/v1/create', '/api/v1', '/create/orders', '/create/order'];
-      for (const suffix of suffixes) {
-        if ((ecotrackBaseUrl || '').toLowerCase().endsWith(suffix)) {
-          ecotrackBaseUrl = ecotrackBaseUrl.slice(0, -suffix.length);
-          break;
-        }
-      }
-      ecotrackBaseUrl = ecotrackBaseUrl.replace(/\/+$/, '');
+      const ecotrackBaseUrl = getEcotrackBaseUrl(ecotrackUrlStr);
 
       const ordersToSync = await prisma!.order.findMany({
         where: {
@@ -745,8 +982,8 @@ async function startServer() {
       }
 
       const trackings = ordersToSync.map(o => o.tracking_number).join(',');
-      let queryToken = ecotrackToken;
-      if (queryToken.startsWith('Bearer ')) queryToken = queryToken.substring(7);
+      let queryToken = ecotrackToken.trim();
+      if (queryToken.toLowerCase().startsWith('bearer ')) queryToken = queryToken.substring(7).trim();
       const syncUrl = `${ecotrackBaseUrl}/api/v1/get/orders/status?api_token=${queryToken}&trackings=${encodeURIComponent(trackings)}&status=all`;
 
       console.log("Syncing from Ecotrack status API:", syncUrl);
@@ -785,6 +1022,53 @@ async function startServer() {
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  app.post('/api/products/:id/ecotrack/sync', checkDb, async (req, res) => {
+    try {
+      const product = await prisma!.product.findUnique({ where: { id: Number(req.params.id) } });
+      if (!product) return res.status(404).json({ error: 'Product not found' });
+
+      const setting = await prisma!.setting.findUnique({ where: { key: 'api_keys' } });
+      if (!setting) return res.status(400).json({ error: 'Ecotrack API configuration not found' });
+      
+      const apiKeys = setting.value as any;
+      const ecotrackToken = apiKeys.ecotrack_token;
+      const ecotrackUrlStr = apiKeys.ecotrack_url;
+      if (!ecotrackToken) return res.status(400).json({ error: 'Ecotrack API token missing' });
+
+      const ecotrackBaseUrl = getEcotrackBaseUrl(ecotrackUrlStr);
+      const headers = getEcotrackHeaders(ecotrackToken);
+
+      // Payload for Ecotrack Product catalog
+      const payload = {
+        name: product.name,
+        prix: product.price,
+        nom: product.name, // compatibility
+        sku: `PROD-${product.id}`,
+        description: product.description || product.name
+      };
+
+      console.log("Syncing product to Ecotrack:", `${ecotrackBaseUrl}/api/v1/create/product`);
+
+      const response = await fetch(`${ecotrackBaseUrl}/api/v1/create/product`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+      console.log("Ecotrack Product Sync Response:", response.status, data);
+
+      if (response.ok && (data.success || data.status === 'success')) {
+        res.json({ success: true, message: 'Product synced to Ecotrack' });
+      } else {
+        res.status(response.status).json({ error: data.error || data.message || 'Failed to sync product' });
+      }
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
     }
   });
 

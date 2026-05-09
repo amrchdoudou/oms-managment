@@ -5,6 +5,7 @@ import { AdminLayout } from './pages/admin/AdminLayout';
 import { Dashboard } from './pages/admin/Dashboard';
 import { ProductsAdmin } from './pages/admin/ProductsAdmin';
 import { ProductDesignerAdmin } from './pages/admin/ProductDesignerAdmin';
+import { ProductContentBuilder } from './pages/admin/ProductContentBuilder';
 import { OrdersAdmin } from './pages/admin/OrdersAdmin';
 import { ShippingFeesAdmin } from './pages/admin/ShippingFeesAdmin';
 import { SettingsAdmin } from './pages/admin/SettingsAdmin';
@@ -44,6 +45,7 @@ export default function App() {
           <Route index element={<Dashboard />} />
           <Route path="products" element={<ProductsAdmin />} />
           <Route path="product-designer" element={<ProductDesignerAdmin />} />
+          <Route path="products/:id/designer" element={<ProductContentBuilder />} />
           <Route path="shipping-fees" element={<ShippingFeesAdmin />} />
           <Route path="products/:id/builder" element={<FormBuilderAdmin />} />
           <Route path="store-builder" element={<StoreBuilderAdmin />} />

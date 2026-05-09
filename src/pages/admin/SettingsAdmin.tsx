@@ -19,6 +19,10 @@ export const SettingsAdmin = () => {
   const [deliveryFees, setDeliveryFees] = useState({ home: 600, desk: 400 });
   const [apiKeys, setApiKeys] = useState<any>({ yalidine_id: '', yalidine_token: '', ecotrack_url: '', ecotrack_token: '' });
 
+  const [isAddingPixel, setIsAddingPixel] = useState(false);
+  const [isSavingFees, setIsSavingFees] = useState(false);
+  const [isSavingApi, setIsSavingApi] = useState(false);
+
   useEffect(() => {
     fetchPixels();
     fetch('/api/settings/delivery_fees').then(r => r.json()).then(d => { if(!d.error) setDeliveryFees(d) });
@@ -28,14 +32,19 @@ export const SettingsAdmin = () => {
   const handleAddPixel = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pixelId) return;
-    await fetch('/api/pixels', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ platform: pixelPlatform, pixel_id: pixelId })
-    });
-    setPixelId('');
-    fetchPixels();
-    toast.success('Pixel added');
+    setIsAddingPixel(true);
+    try {
+      await fetch('/api/pixels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platform: pixelPlatform, pixel_id: pixelId })
+      });
+      setPixelId('');
+      fetchPixels();
+      toast.success('Pixel added');
+    } finally {
+      setIsAddingPixel(false);
+    }
   };
 
   const deletePixel = async (id: string) => {
@@ -55,13 +64,18 @@ export const SettingsAdmin = () => {
     });
   };
 
-  const saveSettings = async (key: string, value: any) => {
-    await fetch(`/api/settings/${key}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(value)
-    });
-    toast.success('Settings saved');
+  const saveSettings = async (key: string, value: any, setLoading?: (v: boolean) => void) => {
+    if (setLoading) setLoading(true);
+    try {
+      await fetch(`/api/settings/${key}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(value)
+      });
+      toast.success('Settings saved');
+    } finally {
+      if (setLoading) setLoading(false);
+    }
   };
 
   return (
@@ -100,7 +114,20 @@ export const SettingsAdmin = () => {
                     <Label>Pixel ID</Label>
                     <Input value={pixelId} onChange={e => setPixelId(e.target.value)} placeholder="e.g. 1234567890" />
                   </div>
-                  <button type="submit" className="w-full bg-[#4F46E5] text-white py-2.5 rounded-lg font-semibold hover:bg-indigo-700 transition-colors mt-2">Install Pixel</button>
+                  <button 
+                    disabled={isAddingPixel}
+                    type="submit" 
+                    className={`w-full text-white py-2.5 rounded-lg font-semibold transition-all duration-300 flex items-center justify-center gap-2 mt-2 ${
+                      isAddingPixel ? 'bg-indigo-400 cursor-wait' : 'bg-[#4F46E5] hover:bg-indigo-700'
+                    }`}
+                  >
+                    {isAddingPixel ? (
+                      <>
+                        <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                        Installing...
+                      </>
+                    ) : 'Install Pixel'}
+                  </button>
                 </form>
             </div>
 
@@ -145,7 +172,20 @@ export const SettingsAdmin = () => {
                    <Label>Desk Delivery (DZD)</Label>
                    <Input type="number" className="bg-[#F8FAFC]" value={deliveryFees.desk} onChange={e => setDeliveryFees({...deliveryFees, desk: parseInt(e.target.value)})} />
                  </div>
-                 <button onClick={() => saveSettings('delivery_fees', deliveryFees)} className="col-span-2 mt-4 bg-[#4F46E5] text-white py-2.5 rounded-lg font-semibold hover:bg-indigo-700 transition-colors">Save Fees</button>
+                 <button 
+                   disabled={isSavingFees}
+                   onClick={() => saveSettings('delivery_fees', deliveryFees, setIsSavingFees)} 
+                   className={`col-span-2 mt-4 text-white py-2.5 rounded-lg font-semibold transition-all duration-300 flex items-center justify-center gap-2 ${
+                     isSavingFees ? 'bg-indigo-400 cursor-wait' : 'bg-[#4F46E5] hover:bg-indigo-700'
+                   }`}
+                 >
+                   {isSavingFees ? (
+                     <>
+                        <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                        Saving...
+                     </>
+                   ) : 'Save Fees'}
+                 </button>
                </div>
           </div>
 
@@ -168,16 +208,33 @@ export const SettingsAdmin = () => {
                  <h3 className="font-semibold text-lg flex items-center gap-2">Ecotrack Config</h3>
                  <div className="space-y-2">
                    <Label>API Base URL</Label>
-                   <Input value={apiKeys.ecotrack_url || ''} onChange={e => setApiKeys({...apiKeys, ecotrack_url: e.target.value})} placeholder="e.g. https://platform.dhd-dz.com" />
-                   <p className="text-xs text-muted-foreground pt-1">If blank, defaults to https://app.ecotrack.dz</p>
+                   <Input value={apiKeys.ecotrack_url || ''} onChange={e => setApiKeys({...apiKeys, ecotrack_url: e.target.value})} placeholder="e.g. https://dhd.ecotrack.dz" />
+                   <p className="text-[10px] text-muted-foreground pt-1 italic">
+                     For DHD: <strong>https://dhd.ecotrack.dz</strong> <br/>
+                     Default: <strong>https://app.ecotrack.dz</strong>
+                   </p>
                  </div>
                  <div className="space-y-2">
                    <Label>Bearer Token</Label>
-                   <Input value={apiKeys.ecotrack_token || ''} onChange={e => setApiKeys({...apiKeys, ecotrack_token: e.target.value})} type="password" placeholder="Token" />
+                   <Input value={apiKeys.ecotrack_token || ''} onChange={e => setApiKeys({...apiKeys, ecotrack_token: e.target.value})} type="password" placeholder="Paste your token here" />
+                   <p className="text-[10px] text-muted-foreground pt-1 italic">We'll automatically add "Bearer " prefix if missing.</p>
                  </div>
                </div>
 
-               <button onClick={() => saveSettings('api_keys', apiKeys)} className="w-full mt-6 bg-[#4F46E5] text-white py-2.5 rounded-lg font-semibold hover:bg-indigo-700 transition-colors">Save API Keys</button>
+               <button 
+                 disabled={isSavingApi}
+                 onClick={() => saveSettings('api_keys', apiKeys, setIsSavingApi)} 
+                 className={`w-full mt-6 text-white py-2.5 rounded-lg font-semibold transition-all duration-300 flex items-center justify-center gap-2 ${
+                   isSavingApi ? 'bg-indigo-400 cursor-wait' : 'bg-[#4F46E5] hover:bg-indigo-700'
+                 }`}
+               >
+                 {isSavingApi ? (
+                   <>
+                     <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                     Saving Integration...
+                   </>
+                 ) : 'Save API Keys'}
+               </button>
             </div>
           </div>
         </TabsContent>

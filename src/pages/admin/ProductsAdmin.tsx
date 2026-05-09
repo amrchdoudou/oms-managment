@@ -18,6 +18,8 @@ export const ProductsAdmin = () => {
   ]);
   const [inventory, setInventory] = useState<Record<string, number>>({});
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const loadProducts = () => {
     fetch('/api/products')
       .then(r => r.ok ? r.json() : [])
@@ -105,45 +107,68 @@ export const ProductsAdmin = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const formData = new FormData();
-    formData.append('name', name);
-    formData.append('description', desc);
-    formData.append('price', price);
+    setIsSubmitting(true);
+    try {
+      const formData = new FormData();
+      formData.append('name', name);
+      formData.append('description', desc);
+      formData.append('price', price);
 
-    const parsedVariants = variants
-      .filter(v => v.name.trim() && v.options.trim())
-      .map(v => ({
-        name: v.name,
-        options: v.options.split(',').map(o => o.trim()).filter(o => o)
-      }));
+      const parsedVariants = variants
+        .filter(v => v.name.trim() && v.options.trim())
+        .map(v => ({
+          name: v.name,
+          options: v.options.split(',').map(o => o.trim()).filter(o => o)
+        }));
 
-    formData.append('variants', JSON.stringify(currentParsedVariants));
-    formData.append('inventory', JSON.stringify(inventory));
-    
-    if (editingProduct && editingProduct.images) {
-      editingProduct.images.forEach((img: string) => {
-        formData.append('existing_images', img);
+      formData.append('variants', JSON.stringify(currentParsedVariants));
+      formData.append('inventory', JSON.stringify(inventory));
+      
+      if (editingProduct && editingProduct.images) {
+        editingProduct.images.forEach((img: string) => {
+          formData.append('existing_images', img);
+        });
+      }
+
+      if (images) {
+        Array.from(images as any).forEach((i) => {
+          formData.append('images', i as Blob);
+        });
+      }
+
+      const res = await fetch(editingProduct ? `/api/products/${editingProduct.id}` : '/api/products', {
+        method: editingProduct ? 'PUT' : 'POST',
+        headers: {
+          'x-api-key': localStorage.getItem('admin_api_key') || ''
+        },
+        body: formData
       });
-    }
 
-    if (images) {
-      Array.from(images as any).forEach((i) => {
-        formData.append('images', i as Blob);
-      });
+      if (res.ok) {
+        toast.success(editingProduct ? 'Product updated!' : 'Product added!');
+        cancelEdit();
+        loadProducts();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(`Failed to ${editingProduct ? 'update' : 'add'} product: ` + (err.error || 'Unknown error'));
+      }
+    } finally {
+      setIsSubmitting(false);
     }
+  };
 
-    const res = await fetch(editingProduct ? `/api/products/${editingProduct.id}` : '/api/products', {
-      method: editingProduct ? 'PUT' : 'POST',
-      body: formData
+  const syncToEcotrack = async (id: number) => {
+    const res = await fetch(`/api/products/${id}/ecotrack/sync`, {
+      method: 'POST',
+      headers: {
+        'x-api-key': localStorage.getItem('admin_api_key') || ''
+      }
     });
-
+    const data = await res.json();
     if (res.ok) {
-      toast.success(editingProduct ? 'Product updated!' : 'Product added!');
-      cancelEdit();
-      loadProducts();
+      toast.success('Synced to Ecotrack');
     } else {
-      const err = await res.json().catch(() => ({}));
-      toast.error(`Failed to ${editingProduct ? 'update' : 'add'} product: ` + (err.error || 'Unknown error'));
+      toast.error('Sync failed: ' + (data.error || 'Check your settings'));
     }
   };
 
@@ -154,19 +179,25 @@ export const ProductsAdmin = () => {
     toast.success('Deleted');
   };
 
+  const getProductImage = (p: any) => {
+    if (!p.images || p.images.length === 0) return 'https://via.placeholder.com/150';
+    const externalUrl = p.images.find((img: string) => img.startsWith('http'));
+    return externalUrl || p.images[0];
+  };
+
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center bg-white p-6 rounded-xl border border-[#E2E8F0] shadow-sm">
+      <div className="flex justify-between items-center bg-white p-6 rounded-xl border-b-4 border-r-2 border-l border-t border-[#E2E8F0] shadow-3d-card">
         <h2 className="text-2xl font-bold tracking-tight text-[#1A202C]">Form Builder</h2>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4">
           {products.map(p => (
-            <div key={p.id} className="bg-white border border-[#E2E8F0] shadow-sm rounded-xl overflow-hidden">
+            <div key={p.id} className="bg-white border-b-4 border-r-2 border-l border-t border-[#E2E8F0] shadow-3d-card rounded-xl overflow-hidden">
               <div className="flex items-center p-4 gap-4">
                 <div className="w-16 h-16 bg-gray-100 rounded overflow-hidden">
-                   <img src={p.images?.[0] || 'https://via.placeholder.com/150'} className="w-full h-full object-cover" />
+                   <img src={getProductImage(p)} className="w-full h-full object-cover" />
                 </div>
                 <div className="flex-1">
                   <h3 className="font-bold text-[#1A202C]">{p.name}</h3>
@@ -191,11 +222,17 @@ export const ProductsAdmin = () => {
                   )}
                 </div>
                 <div className="flex gap-2">
+                  <button onClick={() => syncToEcotrack(p.id)} className="p-2 text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors" title="Sync to Ecotrack">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+                  </button>
                   <button onClick={() => handleEdit(p)} className="p-2 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition-colors" title="Edit Product Info">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
                   </button>
                   <Link to={`/admin/products/${p.id}/builder`} className="p-2 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition-colors" title="Form & Landing Builder">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15.5 2h5v5"/><path d="m21 2-9 9"/><path d="M12 2h-1a10 10 0 1 0 0 20h11a2 2 0 0 0 2-2v-5"/></svg>
+                  </Link>
+                  <Link to={`/admin/products/${p.id}/designer`} className="p-2 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition-colors" title="Product Page Designer">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
                   </Link>
                   <button onClick={() => deleteProduct(p.id)} className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors">
                     <Trash2 size={18} />
@@ -208,7 +245,7 @@ export const ProductsAdmin = () => {
         </div>
  
         <div>
-          <div className="bg-white border border-[#E2E8F0] shadow-sm rounded-xl p-6">
+          <div className="bg-white border-b-4 border-r-2 border-l border-t border-[#E2E8F0] shadow-3d-card rounded-xl p-6">
             <div className="flex justify-between items-center mb-6">
               <h3 className="font-bold text-lg text-[#1A202C]">{editingProduct ? 'Edit Product' : 'Add Product'}</h3>
               {editingProduct && (
@@ -280,8 +317,21 @@ export const ProductsAdmin = () => {
                   </div>
                 )}
 
-                <button type="submit" className="w-full bg-[#4F46E5] text-white py-2.5 rounded-lg font-semibold hover:bg-indigo-700 transition-colors mt-6">
-                  {editingProduct ? 'Update Product' : 'Create Product'}
+                <button 
+                  disabled={isSubmitting}
+                  type="submit" 
+                  className={`w-full text-white py-2.5 rounded-lg font-semibold transition-all duration-300 flex items-center justify-center gap-2 mt-6 ${
+                    isSubmitting ? 'bg-indigo-400 cursor-wait' : 'bg-[#4F46E5] hover:bg-indigo-700'
+                  }`}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                      {editingProduct ? 'Updating...' : 'Creating...'}
+                    </>
+                  ) : (
+                    editingProduct ? 'Update Product' : 'Create Product'
+                  )}
                 </button>
               </form>
           </div>

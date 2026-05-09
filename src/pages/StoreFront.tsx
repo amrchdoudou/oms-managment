@@ -216,15 +216,23 @@ export const StoreFront = () => {
   );
 };
 
-const ProductCard = ({ p, config }: { p: any; config?: any; key?: any }) => (
-  <Link to={`/product/${p.id}`} className="block group">
-    <div className="bg-white rounded-3xl overflow-hidden transition-all duration-500 hover:shadow-2xl hover:shadow-indigo-100 group-hover:-translate-y-2">
-      <div className="aspect-[3/4] bg-[#F8FAFC] relative overflow-hidden">
-        <img 
-          src={p.images?.[0] || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?q=80&w=600&auto=format&fit=crop'} 
-          alt={p.name}
-          className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-        />
+const ProductCard = ({ p, config }: { p: any; config?: any; key?: any }) => {
+  const getProductImage = (images: string[]) => {
+    if (!images || images.length === 0) return 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?q=80&w=600&auto=format&fit=crop';
+    // Prefer external URLs (Cloudinary) over potentially broken local /uploads paths
+    const externalUrl = images.find(img => img.startsWith('http'));
+    return externalUrl || images[0];
+  };
+
+  return (
+    <Link to={`/product/${p.id}`} className="block group">
+      <div className="bg-white rounded-3xl overflow-hidden transition-all duration-500 hover:shadow-2xl hover:shadow-indigo-100 group-hover:-translate-y-2">
+        <div className="aspect-[3/4] bg-[#F8FAFC] relative overflow-hidden">
+          <img 
+            src={getProductImage(p.images)} 
+            alt={p.name}
+            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+          />
         {p.stock <= 5 && p.stock > 0 && (
           <div className="absolute top-4 left-4 bg-orange-500 text-white text-[10px] font-black uppercase px-2 py-1 rounded shadow-lg z-10">Stock Limité</div>
         )}
@@ -242,3 +250,4 @@ const ProductCard = ({ p, config }: { p: any; config?: any; key?: any }) => (
     </div>
   </Link>
 );
+};

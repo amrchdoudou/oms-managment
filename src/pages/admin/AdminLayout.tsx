@@ -7,7 +7,9 @@ export const AdminLayout = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!localStorage.getItem('saas_token')) {
+    if (!localStorage.getItem('saas_token') || !localStorage.getItem('admin_api_key')) {
+      localStorage.removeItem('saas_token');
+      localStorage.removeItem('admin_api_key');
       navigate('/login');
     }
   }, [navigate]);

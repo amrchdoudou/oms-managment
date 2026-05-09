@@ -227,6 +227,8 @@ export const StoreBuilderAdmin = () => {
   const [showAiDialog, setShowAiDialog] = useState(false);
   const [templates, setTemplates] = useState<any[]>([]);
 
+  const [isPublishing, setIsPublishing] = useState(false);
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -252,6 +254,7 @@ export const StoreBuilderAdmin = () => {
   }, []);
 
   const saveConfig = async () => {
+    setIsPublishing(true);
     try {
       const res = await fetch('/api/settings/store_config', {
         method: 'POST',
@@ -262,6 +265,8 @@ export const StoreBuilderAdmin = () => {
       toast.success('Store configuration saved!');
     } catch {
       toast.error('Failed to save store configuration');
+    } finally {
+      setIsPublishing(false);
     }
   };
 
@@ -488,8 +493,20 @@ export const StoreBuilderAdmin = () => {
           <Button variant="outline" size="sm" onClick={() => window.open('/', '_blank')}>
             <Eye size={16} className="mr-2" /> View Site
           </Button>
-          <Button size="sm" onClick={saveConfig} className="bg-[#4F46E5] hover:bg-indigo-700 shadow-lg shadow-indigo-200">
-            <Save size={16} className="mr-2" /> Publish Store
+          <Button disabled={isPublishing} size="sm" onClick={saveConfig} className={`shadow-lg transition-all duration-300 font-bold min-w-[140px] flex items-center justify-center gap-2 ${
+            isPublishing ? 'bg-indigo-400 cursor-wait' : 'bg-[#4F46E5] hover:bg-indigo-700 shadow-indigo-200'
+          }`}>
+            {isPublishing ? (
+              <>
+                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                Publishing...
+              </>
+            ) : (
+              <>
+                <Save size={16} />
+                Publish Store
+              </>
+            )}
           </Button>
         </div>
       </header>

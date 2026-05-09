@@ -15,19 +15,19 @@ export const Dashboard = () => {
       <section className="lg:col-span-2 space-y-6">
         {/* Stats Row */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-sm">
+          <div className="bg-white border-b-4 border-r-2 border-l border-t border-[#E2E8F0] rounded-xl p-5 shadow-3d-card">
             <div className="text-[0.75rem] text-[#718096] uppercase font-semibold mb-2">Total Orders</div>
             <div className="text-2xl font-bold text-[#1A202C]">{stats?.totalOrders || 0}</div>
             <div className="text-[#48BB78] text-[0.75rem] mt-1 font-medium">+12% from yesterday</div>
           </div>
           
-          <div className="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-sm">
+          <div className="bg-white border-b-4 border-r-2 border-l border-t border-[#E2E8F0] rounded-xl p-5 shadow-3d-card">
             <div className="text-[0.75rem] text-[#718096] uppercase font-semibold mb-2">Conversion Rate</div>
             <div className="text-2xl font-bold text-[#1A202C]">4.82%</div>
             <div className="text-[#48BB78] text-[0.75rem] mt-1 font-medium">Healthy traffic</div>
           </div>
           
-          <div className="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-sm">
+          <div className="bg-white border-b-4 border-r-2 border-l border-t border-[#E2E8F0] rounded-xl p-5 shadow-3d-card">
             <div className="text-[0.75rem] text-[#718096] uppercase font-semibold mb-2">Revenue (DZD)</div>
             <div className="text-2xl font-bold text-[#1A202C]">{stats?.totalRevenue || 0}</div>
             <div className="text-[#718096] text-[0.75rem] mt-1 font-medium">Estimated net</div>
@@ -35,7 +35,7 @@ export const Dashboard = () => {
         </div>
 
         {/* Orders Table Area inside Card */}
-        <div className="bg-white border border-[#E2E8F0] rounded-xl p-6 shadow-sm">
+        <div className="bg-white border-b-4 border-r-2 border-l border-t border-[#E2E8F0] rounded-xl p-6 shadow-3d-card">
           <h3 className="font-semibold text-lg text-[#1A202C] mb-4">Recent Syncs (Yalidine/Ecotrack)</h3>
           <div className="h-48 flex items-center justify-center text-[#718096] border-2 border-dashed border-[#E2E8F0] rounded-xl bg-[#F8FAFC]">
             <div className="text-center">
@@ -52,7 +52,7 @@ export const Dashboard = () => {
 
       {/* Sidebar Column */}
       <aside className="space-y-6">
-        <div className="bg-white border border-[#E2E8F0] rounded-xl p-6 shadow-sm">
+        <div className="bg-white border-b-4 border-r-2 border-l border-t border-[#E2E8F0] rounded-xl p-6 shadow-3d-card">
           <h3 className="font-semibold text-lg text-[#1A202C] mb-4">Live Store Preview</h3>
           <div className="w-[280px] h-[520px] bg-white border-[8px] border-[#334155] rounded-[32px] mx-auto relative overflow-hidden shadow-2xl flex flex-col">
             <div className="h-10 bg-[#F8FAFC] p-3 text-left font-bold text-[0.8rem] border-b border-[#E2E8F0]">Storefront</div>

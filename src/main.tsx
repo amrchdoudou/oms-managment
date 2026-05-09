@@ -24,15 +24,23 @@ Object.defineProperty(window, 'fetch', {
       config = config || {};
       const apiKey = localStorage.getItem('admin_api_key') || '';
       
+      let hasApiKey = false;
       if (config.headers instanceof Headers) {
-        config.headers.set('x-api-key', apiKey);
+        hasApiKey = config.headers.has('x-api-key');
+        if (!hasApiKey) config.headers.set('x-api-key', apiKey);
       } else if (Array.isArray(config.headers)) {
-        config.headers.push(['x-api-key', apiKey]);
+        hasApiKey = config.headers.some(h => h[0].toLowerCase() === 'x-api-key');
+        if (!hasApiKey) config.headers.push(['x-api-key', apiKey]);
+      } else if (config.headers) {
+        hasApiKey = Object.keys(config.headers).some(k => k.toLowerCase() === 'x-api-key');
+        if (!hasApiKey) {
+          config.headers = {
+            ...config.headers,
+            'x-api-key': apiKey
+          };
+        }
       } else {
-        config.headers = {
-          ...config.headers,
-          'x-api-key': apiKey
-        };
+        config.headers = { 'x-api-key': apiKey };
       }
       args[1] = config;
     }

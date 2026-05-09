@@ -18,7 +18,7 @@ export const ProductDesignerAdmin = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {products.map(p => (
-          <Link key={p.id} to={`/admin/products/${p.id}/builder`} className="block group">
+          <Link key={p.id} to={`/admin/products/${p.id}/designer`} className="block group">
             <div className="bg-white border border-[#E2E8F0] shadow-sm rounded-xl overflow-hidden hover:border-indigo-500 transition-colors">
               <div className="aspect-video bg-gray-100 relative">
                 <img src={p.images?.[0] || 'https://via.placeholder.com/300'} className="w-full h-full object-cover" />
